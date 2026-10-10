@@ -43,19 +43,19 @@ public class AuthController {
     @Autowired
     private JwtUtil jwtUtil;
 
-    @Value("${app.auth.admin-password:${ADMIN_DEFAULT_PASSWORD:Marken@123$}}")
+    @Value("${app.auth.admin-password:${ADMIN_DEFAULT_PASSWORD:}}")
     private String adminDefaultPassword;
 
-    @Value("${app.auth.misteam-password:${MISTEAM_DEFAULT_PASSWORD:misteam}}")
+    @Value("${app.auth.misteam-password:${MISTEAM_DEFAULT_PASSWORD:}}")
     private String misteamDefaultPassword;
 
-    @Value("${app.auth.executive-password:${EXECUTIVE_DEFAULT_PASSWORD:executive123}}")
+    @Value("${app.auth.executive-password:${EXECUTIVE_DEFAULT_PASSWORD:}}")
     private String executiveDefaultPassword;
 
-    @Value("${app.auth.clearance-password:${CLEARANCE_DEFAULT_PASSWORD:clearance123}}")
+    @Value("${app.auth.clearance-password:${CLEARANCE_DEFAULT_PASSWORD:}}")
     private String clearanceDefaultPassword;
 
-    @Value("${app.auth.tpc-password:${TPC_DEFAULT_PASSWORD:tpc123}}")
+    @Value("${app.auth.tpc-password:${TPC_DEFAULT_PASSWORD:}}")
     private String tpcDefaultPassword;
 
     private final ObjectMapper mapper = new ObjectMapper();
@@ -109,7 +109,7 @@ public class AuthController {
 
         if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         if (!WorkflowPermissions.allowed(MANAGE_USERS)) {
-            List<Map<String, String>> directory = userRepository.findAll().stream()
+            List<Map<String, String>> directory = (userRepository != null ? userRepository.findAll() : Collections.<User>emptyList()).stream()
                     .map(user -> Map.of("username", user.getUsername(), "role", user.getRole())).toList();
             return ResponseEntity.ok(Map.of("success", true, "users", directory));
         }
@@ -208,7 +208,7 @@ public class AuthController {
         }
 
         // Fetch real role from database for logged in user to guarantee accuracy
-        if (adminUser != null && !adminUser.isEmpty()) {
+        if (userRepository != null && adminUser != null && !adminUser.isEmpty()) {
             Optional<User> uOpt = userRepository.findById(adminUser);
             if (uOpt.isPresent()) {
                 adminRole = uOpt.get().getRole();
@@ -251,7 +251,18 @@ public class AuthController {
         }
 
         if (userRepository.existsById(username)) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Username already exists"));
+            User existing = userRepository.findById(username).get();
+            if (password != null && !password.isEmpty()) {
+                existing.setPasswordHash(passwordEncoder.encode(password));
+            }
+            if (role != null && !role.isEmpty()) {
+                existing.setRole(role);
+            }
+            if (email != null && !email.trim().isEmpty()) {
+                existing.setEmail(email.trim());
+            }
+            userRepository.save(existing);
+            return ResponseEntity.ok(Map.of("success", true, "message", "User updated successfully", "user", Map.of("username", existing.getUsername(), "role", existing.getRole())));
         }
 
         User newUser = new User(username, passwordEncoder.encode(password), role);

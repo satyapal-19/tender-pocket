@@ -1,0 +1,106 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tender-pocket-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tender_pocket}
+      POSTGRES_USER: ${DATABASE_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME:-postgres} -d ${POSTGRES_DB:-tender_pocket}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tender_pocket_net
+
+  tender-pocket-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tender-pocket-backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PORT: 8090
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://postgres:5432/${POSTGRES_DB:-tender_pocket}?sslmode=disable}
+      SPRING_DATASOURCE_USERNAME: ${DATABASE_USERNAME:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${DATABASE_PASSWORD}
+      SPRING_JPA_DATABASE_PLATFORM: ${SPRING_JPA_DATABASE_PLATFORM:-org.hibernate.dialect.PostgreSQLDialect}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: ${SPRING_JPA_HIBERNATE_DDL_AUTO:-update}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-315360000}
+      ADMIN_DEFAULT_PASSWORD: ${ADMIN_DEFAULT_PASSWORD:-}
+      MISTEAM_DEFAULT_PASSWORD: ${MISTEAM_DEFAULT_PASSWORD:-}
+      EXECUTIVE_DEFAULT_PASSWORD: ${EXECUTIVE_DEFAULT_PASSWORD:-}
+      CLEARANCE_DEFAULT_PASSWORD: ${CLEARANCE_DEFAULT_PASSWORD:-}
+      TPC_DEFAULT_PASSWORD: ${TPC_DEFAULT_PASSWORD:-}
+      AWS_REGION: ${AWS_REGION:-ap-south-1}
+      AWS_S3_BUCKET_NAME: ${AWS_S3_BUCKET_NAME}
+      AWS_S3_ENABLED: ${AWS_S3_ENABLED:-true}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      FILE_UPLOAD_DIR: ${FILE_UPLOAD_DIR:-public/documents}
+      FILE_TEMPLATE_DIR: ${FILE_TEMPLATE_DIR:-public/templates}
+      SPRING_MAIL_HOST: ${SPRING_MAIL_HOST:-smtp.gmail.com}
+      SPRING_MAIL_PORT: ${SPRING_MAIL_PORT:-465}
+      SPRING_MAIL_USERNAME: ${SPRING_MAIL_USERNAME:-}
+      SPRING_MAIL_PASSWORD: ${SPRING_MAIL_PASSWORD:-}
+      SPRING_MAIL_SMTP_AUTH: ${SPRING_MAIL_SMTP_AUTH:-true}
+      IMAP_HOST: ${IMAP_HOST:-imap.gmail.com}
+      IMAP_PORT: ${IMAP_PORT:-993}
+      IMAP_USERNAME: ${IMAP_USERNAME:-}
+      IMAP_PASSWORD: ${IMAP_PASSWORD:-}
+      IMAP_SENDER_FILTER: ${IMAP_SENDER_FILTER:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      TECHSPEC_GPT_INPUT_USD_PER_MILLION: ${TECHSPEC_GPT_INPUT_USD_PER_MILLION:-0.05}
+      TECHSPEC_GPT_CACHED_INPUT_USD_PER_MILLION: ${TECHSPEC_GPT_CACHED_INPUT_USD_PER_MILLION:-0.005}
+      TECHSPEC_GPT_OUTPUT_USD_PER_MILLION: ${TECHSPEC_GPT_OUTPUT_USD_PER_MILLION:-0.40}
+      TECHSPEC_USD_TO_INR_RATE: ${TECHSPEC_USD_TO_INR_RATE:-}
+      TECHSPEC_USD_TO_INR_RATE_DATE: ${TECHSPEC_USD_TO_INR_RATE_DATE:-}
+    volumes:
+      - backend_documents:/app/public/documents
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8090/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks:
+      - tender_pocket_net
+
+  tender-pocket-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: tender-pocket-frontend
+    restart: always
+    depends_on:
+      tender-pocket-backend:
+        condition: service_healthy
+    ports:
+      - "8085:8085"
+    environment:
+      PORT: 8085
+      NODE_ENV: production
+      BACKEND_URL: ${BACKEND_URL:-http://tender-pocket-backend:8090}
+      JWT_SECRET: ${JWT_SECRET}
+    volumes:
+      - backend_documents:/app/public/documents
+    networks:
+      - tender_pocket_net
+
+volumes:
+  postgres_data:
+    driver: local
+  backend_documents:
+    driver: local
+
+networks:
+  tender_pocket_net:
+    driver: bridge
