@@ -120,11 +120,11 @@ public class GeMScraperService {
                     String items = getJsonString(doc, "b_category_name");
                     String dept = getJsonString(doc, "ba_official_details_deptName");
 
-                    // Require at least 2 matching keywords before fetching/importing tender from GeM portal
+                    // Require at least 1 matching keyword before fetching/importing tender from GeM portal
                     String fullSearchableText = (items != null ? items : "") + " " + (dept != null ? dept : "") + " " + doc.toString();
                     int keywordMatches = countMatchingKeywords(fullSearchableText, keywords);
-                    if (keywordMatches < 2) {
-                        System.out.println(String.format("  - Skipping GeM Bid %s (\"%s\"): Only matched %d keyword(s) (Minimum 2 keywords required).", bidNo, items, keywordMatches));
+                    if (keywordMatches < 1) {
+                        System.out.println(String.format("  - Skipping GeM Bid %s (\"%s\"): No keyword matched.", bidNo, items));
                         continue;
                     }
 
