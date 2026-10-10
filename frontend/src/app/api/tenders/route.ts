@@ -130,7 +130,7 @@ export async function GET(request: Request) {
       return {
         ...t,
         status: resolvedStatus as any,
-        current_stage: t.current_stage || stageKey,
+        current_stage: stageKey,
         has_tpc_price: Boolean(t.tpc_purchase_price && Number(t.tpc_purchase_price) > 0)
       };
     });

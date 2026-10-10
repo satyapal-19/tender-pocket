@@ -4,8 +4,9 @@ import { workflowActor, workflowForbidden } from '@/lib/workflowAuthorization';
 import { localDocumentUrl } from '@/lib/technicalSpecificationBackend';
 import fs from 'fs';
 import path from 'path';
-import { generateHtmlTemplates, generateTechnicalSpecificationHtml, cleanHtmlForDocx } from '@/lib/documentTemplates';
+import zlib from 'zlib';
 import { execSync } from 'child_process';
+import { generateHtmlTemplates, generateTechnicalSpecificationHtml, cleanHtmlForDocx, sanitizeDocxBuffer, getDocxHeaderHtml, getDocxFooterHtml } from '@/lib/documentTemplates';
 
 // @ts-ignore
 import HTMLtoDOCX from 'html-to-docx';
@@ -50,10 +51,53 @@ function checkPdfToText(): boolean {
   return hasPdfToText;
 }
 
-function extractSpecsFromPdf(id: string): { sr: number, parameter: string, value: string }[] {
-  if (!checkPdfToText()) {
-    return [];
+function extractRawTextFromPdf(pdfPath: string): string {
+  if (checkPdfToText()) {
+    try {
+      const text = execSync(`pdftotext -layout "${pdfPath}" -`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      if (text && text.trim().length >= 50) return text;
+    } catch {}
   }
+  try {
+    const buf = fs.readFileSync(pdfPath);
+    let text = '';
+    let pos = 0;
+    while ((pos = buf.indexOf('stream', pos)) !== -1) {
+      pos += 6;
+      if (buf[pos] === 0x0d && buf[pos + 1] === 0x0a) pos += 2;
+      else if (buf[pos] === 0x0a) pos += 1;
+      const end = buf.indexOf('endstream', pos);
+      if (end === -1) break;
+      const chunk = buf.slice(pos, end);
+      let inflated = '';
+      try {
+        inflated = zlib.inflateSync(chunk).toString('utf-8');
+      } catch {
+        try {
+          inflated = zlib.inflateRawSync(chunk).toString('utf-8');
+        } catch {
+          inflated = chunk.toString('latin1');
+        }
+      }
+      const tjRegex = /\[([^\]]*)\]\s*TJ/g;
+      let match;
+      while ((match = tjRegex.exec(inflated)) !== null) {
+        const parts = match[1].match(/\(([^)]*)\)/g);
+        if (parts) text += parts.map(p => p.slice(1, -1)).join('') + ' ';
+      }
+      const singleTjRegex = /\(([^)]*)\)\s*Tj/g;
+      while ((match = singleTjRegex.exec(inflated)) !== null) {
+        text += match[1] + '\n';
+      }
+      pos = end + 9;
+    }
+    return text;
+  } catch {
+    return '';
+  }
+}
+
+function extractSpecsFromPdf(id: string): { sr: number, parameter: string, value: string }[] {
   const docDir = path.join(process.cwd(), 'public', 'documents', id);
   if (!fs.existsSync(docDir)) {
     console.log(`[extractSpecsFromPdf] Document directory not found at ${docDir}`);
@@ -76,7 +120,7 @@ function extractSpecsFromPdf(id: string): { sr: number, parameter: string, value
     console.log(`[extractSpecsFromPdf] Processing PDF file: ${file} for tender ${id}`);
 
     try {
-      const text = execSync(`pdftotext -layout "${pdfPath}" -`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      const text = extractRawTextFromPdf(pdfPath);
       if (!text || text.trim().length < 50) continue;
 
       const isGemBid = text.includes('Technical Specifications') || text.includes('As per GeM') || text.includes('Allowed Values') || text.includes('Specification Name');
@@ -209,8 +253,8 @@ function extractSpecsFromPdf(id: string): { sr: number, parameter: string, value
   }));
 }
 
-// Helper to launch Puppeteer and print HTML content to PDF
-async function generatePdfFile(htmlContent: string, outputPath: string, isLandscape = false) {
+// Helper to launch Puppeteer and print HTML content to PDF in Portrait mode
+async function generatePdfFile(htmlContent: string, outputPath: string) {
   const browser = await puppeteer.launch({
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox']
@@ -221,7 +265,7 @@ async function generatePdfFile(htmlContent: string, outputPath: string, isLandsc
     await page.pdf({
       path: outputPath,
       format: 'A4',
-      landscape: isLandscape,
+      landscape: false,
       printBackground: true,
       margin: {
         top: '0px',
@@ -275,21 +319,40 @@ export async function POST(
     }
 
     const companyKey = (body.companyKey || (body.companyName?.toLowerCase().includes('healthtech') ? 'healthtech' : 'me')).toLowerCase();
-    const orientation = (body.orientation || 'portrait').toLowerCase();
-    const isLandscape = orientation === 'landscape';
+    const orientation = 'portrait';
 
     const defaultCompany = companyKey === 'healthtech' ? {
-      companyName: 'Healthtech Limited',
-      companyAddress: 'Plot No. 45, Healthcare Park, MIDC Industrial Area, Ambad, Nashik – 422010, Maharashtra, India',
-      companyEmail: 'info@healthtech.co.in',
-      companyWebsite: 'www.healthtech.co.in',
-      companyContact: '0253 2381200 / +91 98220 12345'
+      companyName: 'Marken Healthtech Limited',
+      companyAddress: '93/1 Street No.17, MIDC, Satpur, Nashik- 422007. MH. India',
+      companyEmail: 'info@markenworld.com',
+      companyWebsite: 'www.markenworld.com',
+      companyContact: '+91 91 3030 5959',
+      manufacturerName: 'Marken Healthtech Ltd',
+      manufacturerAddress: 'Shed No.1, Plot No.93/1, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra.',
+      signatoryName: 'Korra Praveen Naik',
+      signatoryDesignation: 'Authorized Signatory',
+      signatoryAddress: '1-1-51/46, Kapra, ECIL post, S.T.Colony, VTC: Ranga Reddy, District: Hyderabad, State: Andhra Pradesh, PIN Code: 500062',
+      witnessDetails: 'Mr. Shreedhar Shingare (Cell No.: 09011104332)',
+      localContentPercentage: '100%',
+      localContentLocation: 'Shed No.1, Plot No.93/1, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra',
+      preferencePolicy: 'PPP MII 2017',
+      place: 'Nashik'
     } : {
       companyName: 'Mark Enterprises',
       companyAddress: 'Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India',
       companyEmail: 'info@markenworld.com',
       companyWebsite: 'www.markenworld.com',
-      companyContact: '09175559646 / 090111 04332'
+      companyContact: '09175559646 / 090111 04332',
+      manufacturerName: 'M/s. Mark Enterprises',
+      manufacturerAddress: 'Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra',
+      signatoryName: 'Shreedhar Shingare',
+      signatoryDesignation: 'Authorized Signatory – Tender manager',
+      signatoryAddress: 'Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India',
+      witnessDetails: 'Mr. Korra Praveen Naik',
+      localContentPercentage: '100%',
+      localContentLocation: 'Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra',
+      preferencePolicy: 'PPP MII 2017',
+      place: 'Nashik'
     };
 
     const templateData = {
@@ -299,18 +362,18 @@ export async function POST(
       authorityName: body.authorityName || tender.authority || '',
       authorityDept: body.authorityDept || '',
       authorityAddress: body.authorityAddress || tender.location || '',
-      offeredMake: body.offeredMake || (companyKey === 'healthtech' ? 'Healthtech' : 'MarkEn'),
+      offeredMake: body.offeredMake || (companyKey === 'healthtech' ? 'MarkEn' : 'MarkEn'),
       offeredModel: body.offeredModel || '-',
       scheduleNo: body.scheduleNo || '',
       companyKey,
-      orientation,
+      orientation: 'portrait',
       companyName: body.companyName || defaultCompany.companyName,
       companyAddress: body.companyAddress || defaultCompany.companyAddress,
       companyEmail: body.companyEmail || defaultCompany.companyEmail,
       companyWebsite: body.companyWebsite || defaultCompany.companyWebsite,
       companyContact: body.companyContact || defaultCompany.companyContact,
-      signatoryName: body.signatoryName || 'Korra Praveen Naik',
-      signatoryDesignation: body.signatoryDesignation || 'Partner',
+      signatoryName: body.signatoryName || defaultCompany.signatoryName,
+      signatoryDesignation: body.signatoryDesignation || defaultCompany.signatoryDesignation,
       date: body.date || new Date().toLocaleDateString('en-GB'),
       ...body
     };
@@ -323,59 +386,61 @@ export async function POST(
     // Generate unified HTML content representing all 15 documents
     const htmlContent = generateHtmlTemplates(templateData);
 
-    // 1. Generate and save PDF using Puppeteer
+    // 1. Generate and save PDF using Puppeteer in Portrait mode
     const pdfFileName = `Bid_Documents_${id}.pdf`;
     const pdfFilePath = path.join(docDir, pdfFileName);
     const pdfDownloadPath = localDocumentUrl(id, pdfFileName);
-    await generatePdfFile(htmlContent, pdfFilePath, isLandscape);
+    await generatePdfFile(htmlContent, pdfFilePath);
 
-    // 2. Generate and save Word document using html-to-docx
+    // 2. Generate and save Word document using html-to-docx in Portrait mode with OpenXML sanitation
     const docFileName = `Bid_Documents_${id}.docx`;
     const docFilePath = path.join(docDir, docFileName);
     const docDownloadPath = localDocumentUrl(id, docFileName);
 
-    const docxBuffer = await HTMLtoDOCX(cleanHtmlForDocx(htmlContent), null, {
+    const isHealthtech = companyKey === 'healthtech';
+    const docxHeaderHtml = getDocxHeaderHtml(companyKey);
+    const docxFooterHtml = getDocxFooterHtml(companyKey);
+
+    const docxOptions = {
       table: { row: { cantSplit: true } },
+      header: true,
       footer: true,
-      pageNumber: true,
-      orientation: isLandscape ? 'landscape' : 'portrait',
-      margins: isLandscape ? {
-        top: 1200,
-        bottom: 800,
-        left: 850,
-        right: 850
-      } : {
-        top: 1960,
-        bottom: 800,
-        left: 850,
-        right: 850
+      orientation: 'portrait' as const,
+      pageSize: {
+        width: 11906,
+        height: 16838
+      },
+      font: isHealthtech ? 'Cambria' : 'Times New Roman',
+      fontSize: isHealthtech ? 22 : 23, // 11pt Cambria vs 11.5pt Times New Roman
+      margins: {
+        top: 600,
+        bottom: 850,
+        left: isHealthtech ? 800 : 650,
+        right: isHealthtech ? 800 : 650,
+        header: 280,
+        footer: 280
       }
-    });
+    };
+
+    const docxRaw = await HTMLtoDOCX(cleanHtmlForDocx(htmlContent, companyKey), docxHeaderHtml, docxOptions, docxFooterHtml);
+    const docxBuffer = await sanitizeDocxBuffer(docxRaw);
     fs.writeFileSync(docFilePath, docxBuffer);
 
-    // 3. Generate and save Technical Specification Sheet PDF & DOCX
+    // 3. Generate and save Technical Specification Sheet PDF & DOCX in Portrait mode
     const specs = extractSpecsFromPdf(id);
     const specHtml = generateTechnicalSpecificationHtml(templateData, specs);
 
     const specPdfFileName = `Technical_Specification_Sheet_${id}.pdf`;
     const specPdfFilePath = path.join(docDir, specPdfFileName);
     const specPdfDownloadPath = localDocumentUrl(id, specPdfFileName);
-    await generatePdfFile(specHtml, specPdfFilePath, isLandscape);
+    await generatePdfFile(specHtml, specPdfFilePath);
 
     const specDocFileName = `Technical_Specification_Sheet_${id}.docx`;
     const specDocFilePath = path.join(docDir, specDocFileName);
     const specDocDownloadPath = localDocumentUrl(id, specDocFileName);
 
-    const specDocxBuffer = await HTMLtoDOCX(cleanHtmlForDocx(specHtml), null, {
-      table: { row: { cantSplit: true } },
-      orientation: isLandscape ? 'landscape' : 'portrait',
-      margins: {
-        top: 1440,
-        bottom: 1440,
-        left: 1440,
-        right: 1440
-      }
-    });
+    const specDocxRaw = await HTMLtoDOCX(cleanHtmlForDocx(specHtml, companyKey), docxHeaderHtml, docxOptions, docxFooterHtml);
+    const specDocxBuffer = await sanitizeDocxBuffer(specDocxRaw);
     fs.writeFileSync(specDocFilePath, specDocxBuffer);
 
     // 4. Update SQLite database downloaded_docs metadata
@@ -432,7 +497,9 @@ export async function POST(
       UPDATE tenders 
       SET downloaded_docs = ?, 
           current_stage = 'DOC_VERIFICATION', 
-          verification_status = 'Pending' 
+          verification_status = 'Pending',
+          payment_status = 'None',
+          submission_status = 'None'
       WHERE id = ?
     `);
     updateStmt.run(JSON.stringify(currentDocs), id);
@@ -441,6 +508,9 @@ export async function POST(
     const assignedMis = tender.assigned_mis_member || 'misteam';
 
     try {
+      // Cancel/remove any premature downstream approval requests
+      db.prepare("DELETE FROM tender_approval_requests WHERE tender_id = ? AND stage IN ('PAYMENT_APPROVAL', 'SUBMISSION_PENDING', 'WIN_LOSS_PENDING') AND status = 'PENDING'").run(id);
+
       const existingDocReq = db.prepare("SELECT id FROM tender_approval_requests WHERE tender_id = ? AND stage = 'DOC_VERIFICATION' AND status = 'PENDING'").get(id);
       if (existingDocReq) {
         db.prepare("UPDATE tender_approval_requests SET requested_by = ?, assigned_to = ?, working_path = ?, updated_at = ? WHERE id = ?")

@@ -68,6 +68,7 @@ import { Tender } from '@/lib/db';
 import ApprovalsCenter from '@/app/components/ApprovalsCenter';
 import StatusDashboard from '@/app/components/StatusDashboard';
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
+import { areBidDocsGenerated } from '@/lib/tenderStatus';
 import { canPerform, canonicalRole } from '@/lib/workflowAuthorization';
 
 
@@ -236,18 +237,7 @@ export default function Dashboard() {
     selectedTender.current_stage === 'WIN_LOSS_PENDING'
   ) : false;
 
-  const areDocsGenerated = selectedTender ? (() => {
-    if (isOutcomeState) return true;
-    if (!selectedTender.downloaded_docs) return false;
-    try {
-      const docs = JSON.parse(selectedTender.downloaded_docs);
-      return Array.isArray(docs) && docs.some((d: any) => 
-        d.name && (d.name.includes("Generated Bid Documents") || d.name.includes("Bid Documents"))
-      );
-    } catch {
-      return false;
-    }
-  })() : false;
+  const areDocsGenerated = selectedTender ? (isOutcomeState || areBidDocsGenerated(selectedTender)) : false;
 
   // Sequential Pipeline Stage Visibility:
   // When a tender is at stage 1, do not show remaining stages in the frontend to any user.
@@ -316,12 +306,56 @@ export default function Dashboard() {
   const [uploadedFileName, setUploadedFileName] = useState('');
   const [uploadedEmlString, setUploadedEmlString] = useState('');
 
-  // Bid Document Form States
+  // Bid Document Form States & Company Presets
+  const COMPANY_PRESETS = {
+    me: {
+      companyKey: "me",
+      companyName: "Mark Enterprises",
+      companyAddress: "Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India",
+      companyEmail: "info@markenworld.com",
+      companyWebsite: "www.markenworld.com",
+      companyContact: "09175559646 / 090111 04332",
+      manufacturerName: "M/s. Mark Enterprises",
+      manufacturerAddress: "Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra",
+      signatoryName: "Shreedhar Shingare",
+      signatoryDesignation: "Authorized Signatory – Tender manager",
+      signatoryAddress: "Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India",
+      witnessDetails: "Mr. Korra Praveen Naik",
+      localContentPercentage: "100%",
+      localContentLocation: "Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra",
+      preferencePolicy: "PPP MII 2017",
+      warrantyPeriod: "Five (5) years",
+      serviceSupportPeriod: "Five (5) years",
+      sparesAvailabilityPeriod: "Ten (10) years",
+      place: "Nashik"
+    },
+    healthtech: {
+      companyKey: "healthtech",
+      companyName: "Marken Healthtech Limited",
+      companyAddress: "93/1 Street No.17, MIDC, Satpur, Nashik- 422007. MH. India",
+      companyEmail: "info@markenworld.com",
+      companyWebsite: "www.markenworld.com",
+      companyContact: "+91 91 3030 5959",
+      manufacturerName: "Marken Healthtech Ltd",
+      manufacturerAddress: "Shed No.1, Plot No.93/1, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra.",
+      signatoryName: "Korra Praveen Naik",
+      signatoryDesignation: "Authorized Signatory",
+      signatoryAddress: "1-1-51/46, Kapra, ECIL post, S.T.Colony, VTC: Ranga Reddy, District: Hyderabad, State: Andhra Pradesh, PIN Code: 500062",
+      witnessDetails: "Mr. Shreedhar Shingare (Cell No.: 09011104332)",
+      localContentPercentage: "100%",
+      localContentLocation: "Shed No.1, Plot No.93/1, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra",
+      preferencePolicy: "PPP MII 2017",
+      warrantyPeriod: "Five (5) years",
+      serviceSupportPeriod: "Five (5) years",
+      sparesAvailabilityPeriod: "Ten (10) years",
+      place: "Nashik"
+    }
+  };
+
   const [isBidDocFormOpen, setIsBidDocFormOpen] = useState(false);
   const [formActiveTab, setFormActiveTab] = useState<'tender' | 'company' | 'signatory' | 'clauses'>('tender');
   const [generatingBidDocs, setGeneratingBidDocs] = useState(false);
   const [bidFormFields, setBidFormFields] = useState({
-    companyKey: "me",
     orientation: "portrait",
     date: "",
     authorityName: "",
@@ -330,24 +364,7 @@ export default function Dashboard() {
     bidNumber: "",
     bidDate: "",
     productDescription: "",
-    companyName: "Mark Enterprises",
-    companyAddress: "Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India",
-    companyEmail: "info@markenworld.com",
-    companyWebsite: "www.markenworld.com",
-    companyContact: "09175559646 / 090111 04332",
-    manufacturerName: "M/s. Mark Enterprises",
-    manufacturerAddress: "Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra",
-    signatoryName: "Korra Praveen Naik",
-    signatoryDesignation: "Partner",
-    signatoryAddress: "1-1-51/46, Kapra, ECIL post, S.T.Colony, VTC: Ranga Reddy, District: Hyderabad, State: Andhra Pradesh, PIN Code: 500062",
-    witnessDetails: "Mr. Shreedhar Shingare (Cell No.: 09011104332)",
-    localContentPercentage: "100%",
-    localContentLocation: "Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra",
-    preferencePolicy: "PPP MII 2017",
-    warrantyPeriod: "Five (5) years",
-    serviceSupportPeriod: "Five (5) years",
-    sparesAvailabilityPeriod: "Ten (10) years",
-    place: "Nashik"
+    ...COMPANY_PRESETS.me
   });
 
   const openBidDocForm = () => {
@@ -358,7 +375,6 @@ export default function Dashboard() {
     const formattedToday = `${d.getDate()}-${months[d.getMonth()]}-${d.getFullYear()}`;
 
     setBidFormFields({
-      companyKey: "me",
       orientation: "portrait",
       date: formattedToday,
       authorityName: selectedTender.authority || "",
@@ -367,24 +383,7 @@ export default function Dashboard() {
       bidNumber: selectedTender.ref_no || "",
       bidDate: selectedTender.publish_date || selectedTender.start_date || formattedToday,
       productDescription: selectedTender.product_name_as_per_tender || selectedTender.title || "",
-      companyName: "Mark Enterprises",
-      companyAddress: "Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India",
-      companyEmail: "info@markenworld.com",
-      companyWebsite: "www.markenworld.com",
-      companyContact: "09175559646 / 090111 04332",
-      manufacturerName: "M/s. Mark Enterprises",
-      manufacturerAddress: "Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra",
-      signatoryName: "Korra Praveen Naik",
-      signatoryDesignation: "Partner",
-      signatoryAddress: "1-1-51/46, Kapra, ECIL post, S.T.Colony, VTC: Ranga Reddy, District: Hyderabad, State: Andhra Pradesh, PIN Code: 500062",
-      witnessDetails: "Mr. Shreedhar Shingare (Cell No.: 09011104332)",
-      localContentPercentage: "100%",
-      localContentLocation: "Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra",
-      preferencePolicy: "PPP MII 2017",
-      warrantyPeriod: "Five (5) years",
-      serviceSupportPeriod: "Five (5) years",
-      sparesAvailabilityPeriod: "Ten (10) years",
-      place: "Nashik"
+      ...COMPANY_PRESETS.me
     });
     setFormActiveTab('tender');
     setIsBidDocFormOpen(true);
@@ -424,7 +423,21 @@ export default function Dashboard() {
           local_path: data.pdfDownloadUrl, 
           created_date: new Date().toLocaleDateString('en-IN') 
         };
-        
+        const newSpecWord = {
+          name: "Technical Specification Sheet (Word DOCX)",
+          filename: `Technical_Specification_Sheet_${selectedTender.id}.docx`,
+          local_path: data.specDownloadUrl,
+          created_date: new Date().toLocaleDateString('en-IN')
+        };
+        const newSpecPdf = {
+          name: "Technical Specification Sheet (PDF)",
+          filename: `Technical_Specification_Sheet_${selectedTender.id}.pdf`,
+          local_path: data.specPdfDownloadUrl,
+          created_date: new Date().toLocaleDateString('en-IN')
+        };
+        const generatedPaths = [data.downloadUrl, data.pdfDownloadUrl, data.specDownloadUrl, data.specPdfDownloadUrl].filter(Boolean);
+        const docsToAdd = [newDocWord, newDocPdf, newSpecWord, newSpecPdf].filter(d => Boolean(d.local_path));
+
         setTenders(prev => prev.map(t => {
           if (t.id === selectedTender.id) {
             let currentDocs = [];
@@ -434,9 +447,8 @@ export default function Dashboard() {
             } catch {
               currentDocs = [];
             }
-            currentDocs = currentDocs.filter((d: any) => d.local_path !== data.downloadUrl && d.local_path !== data.pdfDownloadUrl);
-            currentDocs.push(newDocWord);
-            currentDocs.push(newDocPdf);
+            currentDocs = currentDocs.filter((d: any) => !generatedPaths.includes(d.local_path));
+            currentDocs.push(...docsToAdd);
             return { ...t, downloaded_docs: JSON.stringify(currentDocs) };
           }
           return t;
@@ -451,9 +463,8 @@ export default function Dashboard() {
           } catch {
             currentDocs = [];
           }
-          currentDocs = currentDocs.filter((d: any) => d.local_path !== data.downloadUrl && d.local_path !== data.pdfDownloadUrl);
-          currentDocs.push(newDocWord);
-          currentDocs.push(newDocPdf);
+          currentDocs = currentDocs.filter((d: any) => !generatedPaths.includes(d.local_path));
+          currentDocs.push(...docsToAdd);
           return { 
             ...prev, 
             downloaded_docs: JSON.stringify(currentDocs),
@@ -6867,56 +6878,26 @@ export default function Dashboard() {
                   <div className="form-grid">
                     <div className="form-group span-2" style={{ background: 'rgba(59, 130, 246, 0.05)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)', marginBottom: '8px' }}>
                       <label className="form-label" style={{ color: '#3b82f6', fontWeight: 'bold' }}>🏢 Letterhead & Template Format</label>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '6px' }}>
                         <div>
                           <label className="form-label" style={{ fontSize: '11px' }}>Select Company</label>
                           <select
                             className="form-input"
                             value={bidFormFields.companyKey || 'me'}
                             onChange={(e) => {
-                              const val = e.target.value;
-                              if (val === 'healthtech') {
-                                setBidFormFields(prev => ({
-                                  ...prev,
-                                  companyKey: 'healthtech',
-                                  companyName: 'Healthtech Limited',
-                                  companyAddress: 'Plot No. 45, Healthcare Park, MIDC Industrial Area, Ambad, Nashik – 422010, Maharashtra, India',
-                                  companyEmail: 'info@healthtech.co.in',
-                                  companyWebsite: 'www.healthtech.co.in',
-                                  companyContact: '0253 2381200 / +91 98220 12345'
-                                }));
-                              } else {
-                                setBidFormFields(prev => ({
-                                  ...prev,
-                                  companyKey: 'me',
-                                  companyName: 'Mark Enterprises',
-                                  companyAddress: 'Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India',
-                                  companyEmail: 'info@markenworld.com',
-                                  companyWebsite: 'www.markenworld.com',
-                                  companyContact: '09175559646 / 090111 04332'
-                                }));
-                              }
+                              const val = e.target.value as 'me' | 'healthtech';
+                              const preset = COMPANY_PRESETS[val] || COMPANY_PRESETS.me;
+                              setBidFormFields(prev => ({
+                                ...prev,
+                                ...preset
+                              }));
                             }}
                             style={{ fontWeight: '600' }}
                           >
                             <option value="me">Mark Enterprises (ME)</option>
-                            <option value="healthtech">Healthtech Limited</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="form-label" style={{ fontSize: '11px' }}>Page Orientation</label>
-                          <select
-                            className="form-input"
-                            value={bidFormFields.orientation || 'portrait'}
-                            onChange={(e) => setBidFormFields(prev => ({ ...prev, orientation: e.target.value }))}
-                            style={{ fontWeight: '600' }}
-                          >
-                            <option value="portrait">📄 Portrait (A4 Vertical)</option>
-                            <option value="landscape">📜 Landscape (A4 Horizontal)</option>
+                            <option value="healthtech">Healthtech Limited (Marken)</option>
                           </select>
                         </div>
                       </div>
-                    </div>
                     <div className="form-group">
                       <label className="form-label">Bid / Tender Number</label>
                       <input

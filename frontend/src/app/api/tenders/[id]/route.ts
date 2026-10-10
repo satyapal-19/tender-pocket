@@ -74,6 +74,24 @@ export async function GET(
     };
 
     tender.status = resolveStatus(tender, todayISTString);
+
+    // Auto-heal downstream statuses if prerequisite stages are incomplete
+    if (tender.verification_status !== 'Approved' && !['Won', 'Lost', 'Awarded', 'Not Awarded', 'Submitted', 'Filed'].includes(tender.status)) {
+      if (tender.payment_status === 'Approved' || tender.payment_status === 'Pending') {
+        tender.payment_status = 'None';
+        try { db.prepare("UPDATE tenders SET payment_status = 'None' WHERE id = ?").run(id); } catch (_) {}
+      }
+      if (tender.submission_status === 'Approved' || tender.submission_status === 'Pending') {
+        tender.submission_status = 'None';
+        try { db.prepare("UPDATE tenders SET submission_status = 'None' WHERE id = ?").run(id); } catch (_) {}
+      }
+    } else if (tender.payment_status !== 'Approved' && !['Won', 'Lost', 'Awarded', 'Not Awarded', 'Submitted', 'Filed'].includes(tender.status)) {
+      if (tender.submission_status === 'Approved' || tender.submission_status === 'Pending') {
+        tender.submission_status = 'None';
+        try { db.prepare("UPDATE tenders SET submission_status = 'None' WHERE id = ?").run(id); } catch (_) {}
+      }
+    }
+
     const canonicalStage = resolveTenderStageKey(tender);
     if (tender.current_stage !== canonicalStage) {
       tender.current_stage = canonicalStage;
@@ -334,12 +352,21 @@ export async function PATCH(
       fieldsToUpdate.push('payment_status = ?');
       updateParams.push(payment_status);
       logDetails.push(`payment status changed from '${oldTender.payment_status}' to '${payment_status}'`);
+
+      if (payment_status !== 'Approved' && submission_status === undefined) {
+        fieldsToUpdate.push("submission_status = 'None'");
+      }
     }
 
     if (verification_status !== undefined && verification_status !== oldTender.verification_status) {
       fieldsToUpdate.push('verification_status = ?');
       updateParams.push(verification_status);
       logDetails.push(`verification status changed from '${oldTender.verification_status}' to '${verification_status}'`);
+
+      if (verification_status !== 'Approved') {
+        if (payment_status === undefined) fieldsToUpdate.push("payment_status = 'None'");
+        if (submission_status === undefined) fieldsToUpdate.push("submission_status = 'None'");
+      }
     }
 
     if (submission_status !== undefined && submission_status !== oldTender.submission_status) {

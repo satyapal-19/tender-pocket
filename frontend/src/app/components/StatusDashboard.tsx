@@ -315,11 +315,11 @@ export default function StatusDashboard({
       },
       {
         key: 'STAGE_7_SUBMISSION',
-        title: '7. Portal File',
+        title: '7. Final Submission',
         group: 'PIPELINE',
         count: stage7Count,
         trend: 'Stage 7 of 8',
-        subText: 'Portal filing & audit',
+        subText: 'Final filing & audit',
         icon: UploadCloud,
         iconColor: '#3b82f6',
         bgColor: 'rgba(59, 130, 246, 0.1)',

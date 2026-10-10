@@ -30,6 +30,7 @@ import {
 import { Tender } from '@/lib/db';
 import { canPerform } from '@/lib/workflowAuthorization';
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
+import { areBidDocsGenerated } from '@/lib/tenderStatus';
 
 interface Toast {
   message: string;
@@ -102,11 +103,62 @@ export default function TenderDetailPage() {
   const [submittingSpecClearance, setSubmittingSpecClearance] = useState(false);
   const [submittingApproveClearance, setSubmittingApproveClearance] = useState(false);
 
+  // Company Presets
+  const COMPANY_PRESETS = {
+    me: {
+      companyKey: 'me',
+      companyName: 'Mark Enterprises',
+      companyAddress: 'Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India',
+      companyEmail: 'info@markenworld.com',
+      companyWebsite: 'www.markenworld.com',
+      companyContact: '09175559646 / 090111 04332',
+      manufacturerName: 'M/s. Mark Enterprises',
+      manufacturerAddress: 'Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra',
+      signatoryName: 'Shreedhar Shingare',
+      signatoryDesignation: 'Authorized Signatory – Tender manager',
+      signatoryAddress: 'Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India',
+      witnessDetails: 'Mr. Korra Praveen Naik',
+      localContentPercentage: '100%',
+      localContentLocation: 'Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra',
+      preferencePolicy: 'PPP MII 2017',
+      warrantyPeriod: 'Five (5) years',
+      serviceSupportPeriod: 'Five (5) years',
+      sparesAvailabilityPeriod: 'Ten (10) years',
+      place: 'Nashik',
+      make: 'MarkEn',
+      model: 'MILR-04',
+      companyNameCompliance: 'M/s. Mark Enterprises'
+    },
+    healthtech: {
+      companyKey: 'healthtech',
+      companyName: 'Marken Healthtech Limited',
+      companyAddress: '93/1 Street No.17, MIDC, Satpur, Nashik- 422007. MH. India',
+      companyEmail: 'info@markenworld.com',
+      companyWebsite: 'www.markenworld.com',
+      companyContact: '+91 91 3030 5959',
+      manufacturerName: 'Marken Healthtech Ltd',
+      manufacturerAddress: 'Shed No.1, Plot No.93/1, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra.',
+      signatoryName: 'Korra Praveen Naik',
+      signatoryDesignation: 'Authorized Signatory',
+      signatoryAddress: '1-1-51/46, Kapra, ECIL post, S.T.Colony, VTC: Ranga Reddy, District: Hyderabad, State: Andhra Pradesh, PIN Code: 500062',
+      witnessDetails: 'Mr. Shreedhar Shingare (Cell No.: 09011104332)',
+      localContentPercentage: '100%',
+      localContentLocation: 'Shed No.1, Plot No.93/1, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra',
+      preferencePolicy: 'PPP MII 2017',
+      warrantyPeriod: 'Five (5) years',
+      serviceSupportPeriod: 'Five (5) years',
+      sparesAvailabilityPeriod: 'Ten (10) years',
+      place: 'Nashik',
+      make: 'MarkEn',
+      model: 'MILR-04',
+      companyNameCompliance: 'Marken Healthtech Limited'
+    }
+  };
+
   // Bid Doc Generator Modal States
   const [isBidDocFormOpen, setIsBidDocFormOpen] = useState(false);
   const [generatingBidDocs, setGeneratingBidDocs] = useState(false);
   const [bidFormFields, setBidFormFields] = useState({
-    companyKey: 'me',
     orientation: 'portrait',
     bidNumber: '',
     bidDate: '',
@@ -114,28 +166,8 @@ export default function TenderDetailPage() {
     authorityDept: '',
     authorityAddress: '',
     productDescription: '',
-    companyName: '',
-    companyContact: '',
-    companyAddress: '',
-    companyEmail: '',
-    companyWebsite: '',
-    manufacturerName: '',
-    manufacturerAddress: '',
-    signatoryName: '',
-    signatoryDesignation: '',
-    signatoryAddress: '',
-    witnessDetails: '',
-    localContentPercentage: '50',
-    preferencePolicy: 'yes',
-    localContentLocation: '',
-    warrantyPeriod: '1',
-    serviceSupportPeriod: '1',
-    sparesAvailabilityPeriod: '10',
-    place: '',
-    make: 'MarkEn',
-    model: 'MILR-04',
     requiredQuantity: '300',
-    companyNameCompliance: 'M/s. Mark Enterprises'
+    ...COMPANY_PRESETS.me
   });
 
   const [toast, setToast] = useState<Toast>({ message: '', type: 'success', show: false });
@@ -635,7 +667,6 @@ export default function TenderDetailPage() {
   const openBidDocForm = () => {
     if (!selectedTender) return;
     setBidFormFields({
-      companyKey: 'me',
       orientation: 'portrait',
       bidNumber: selectedTender.id || '',
       bidDate: new Date().toLocaleDateString('en-CA'), // YYYY-MM-DD
@@ -643,28 +674,8 @@ export default function TenderDetailPage() {
       authorityDept: '',
       authorityAddress: selectedTender.location || '',
       productDescription: selectedTender.product_name_as_per_tender || selectedTender.title || '',
-      companyName: 'Mark Enterprises',
-      companyContact: '09175559646 / 090111 04332',
-      companyAddress: 'Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India',
-      companyEmail: 'info@markenworld.com',
-      companyWebsite: 'www.markenworld.com',
-      manufacturerName: 'Marken OEM Division',
-      manufacturerAddress: 'Industrial Area Phase 2, Mumbai',
-      signatoryName: 'John Doe',
-      signatoryDesignation: 'Director BD',
-      signatoryAddress: 'Delhi, India',
-      witnessDetails: 'Jane Smith, Manager Finance',
-      localContentPercentage: '50',
-      preferencePolicy: 'yes',
-      localContentLocation: 'New Delhi Plant',
-      warrantyPeriod: '1',
-      serviceSupportPeriod: '1',
-      sparesAvailabilityPeriod: '10',
-      place: selectedTender.place || 'New Delhi',
-      make: 'MarkEn',
-      model: 'MILR-04',
       requiredQuantity: selectedTender.bid_qty !== null && selectedTender.bid_qty !== undefined ? String(selectedTender.bid_qty) : '300',
-      companyNameCompliance: 'M/s. Mark Enterprises'
+      ...COMPANY_PRESETS.me
     });
     setIsBidDocFormOpen(true);
   };
@@ -717,18 +728,7 @@ export default function TenderDetailPage() {
     selectedTender.current_stage === 'WIN_LOSS_PENDING'
   ) : false;
 
-  const areDocsGenerated = selectedTender ? (() => {
-    if (isOutcomeState) return true;
-    if (!selectedTender.downloaded_docs) return false;
-    try {
-      const docs = JSON.parse(selectedTender.downloaded_docs);
-      return Array.isArray(docs) && docs.some((d: any) => 
-        d.name && (d.name.includes("Generated Bid Documents") || d.name.includes("Bid Documents"))
-      );
-    } catch {
-      return false;
-    }
-  })() : false;
+  const areDocsGenerated = selectedTender ? (isOutcomeState || areBidDocsGenerated(selectedTender)) : false;
 
   // Sequential Pipeline Stage Visibility:
   // When a tender is at stage 1, do not show remaining stages in the frontend to any user.
@@ -2462,53 +2462,24 @@ export default function TenderDetailPage() {
                     <h4 style={{ margin: '0 0 10px 0', fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--primary)' }}>Tender Parameters</h4>
                     <div style={{ background: 'rgba(59, 130, 246, 0.05)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)', marginBottom: '12px' }}>
                       <label style={{ fontSize: '12px', color: '#3b82f6', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>🏢 Letterhead & Template Format</label>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Select Company</label>
                           <select
                             value={bidFormFields.companyKey || 'me'}
                             onChange={(e) => {
-                              const val = e.target.value;
-                              if (val === 'healthtech') {
-                                setBidFormFields(prev => ({
-                                  ...prev,
-                                  companyKey: 'healthtech',
-                                  companyName: 'Healthtech Limited',
-                                  companyAddress: 'Plot No. 45, Healthcare Park, MIDC Industrial Area, Ambad, Nashik – 422010, Maharashtra, India',
-                                  companyEmail: 'info@healthtech.co.in',
-                                  companyWebsite: 'www.healthtech.co.in',
-                                  companyContact: '0253 2381200 / +91 98220 12345'
-                                }));
-                              } else {
-                                setBidFormFields(prev => ({
-                                  ...prev,
-                                  companyKey: 'me',
-                                  companyName: 'Mark Enterprises',
-                                  companyAddress: 'Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India',
-                                  companyEmail: 'info@markenworld.com',
-                                  companyWebsite: 'www.markenworld.com',
-                                  companyContact: '09175559646 / 090111 04332'
-                                }));
-                              }
+                              const val = e.target.value as 'me' | 'healthtech';
+                              const preset = COMPANY_PRESETS[val] || COMPANY_PRESETS.me;
+                              setBidFormFields(prev => ({
+                                ...prev,
+                                ...preset
+                              }));
                             }}
                             style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px', fontWeight: '600' }}
                           >
                             <option value="me">Mark Enterprises (ME)</option>
-                            <option value="healthtech">Healthtech Limited</option>
+                            <option value="healthtech">Healthtech Limited (Marken)</option>
                           </select>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Page Orientation</label>
-                          <select
-                            value={bidFormFields.orientation || 'portrait'}
-                            onChange={(e) => setBidFormFields(prev => ({ ...prev, orientation: e.target.value }))}
-                            style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px', fontWeight: '600' }}
-                          >
-                            <option value="portrait">📄 Portrait (A4 Vertical)</option>
-                            <option value="landscape">📜 Landscape (A4 Horizontal)</option>
-                          </select>
-                        </div>
-                      </div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
