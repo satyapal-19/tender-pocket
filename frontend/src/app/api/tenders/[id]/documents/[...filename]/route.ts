@@ -31,7 +31,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         targetPath = backendPath;
       } else {
         console.log(`[Document Download API] ${filenameStr} missing for Tender ${safeId}. Attempting on-demand retrieval...`);
-        
+
         const targetDir = path.dirname(targetPath);
         if (!fs.existsSync(targetDir)) {
           fs.mkdirSync(targetDir, { recursive: true });

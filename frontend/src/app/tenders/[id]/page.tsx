@@ -2847,7 +2847,7 @@ export default function TenderDetailPage() {
                   {techSpecProgress?.percent !== undefined ? `${techSpecProgress.percent}%` : '5%'}
                 </span>
               </div>
-              
+
               <div style={{
                 width: '100%',
                 height: '10px',
